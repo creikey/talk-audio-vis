@@ -34,31 +34,92 @@ button { width: 10em; height: 10%; font-size: 200%; }
 	<canvas id="canvas" style="display: none;">
 	</canvas>
 
+
 	<script>
 
 var canvas = document.getElementById("canvas");
 var button_div = document.getElementById("button-div");
 
+var analyser;
+
+function draw() {
+	var width = canvas.width;
+	var height = canvas.height;
+	var ctx = canvas.getContext("2d");
+
+	const bufferLength = analyser.frequencyBinCount;
+	const dataArray = new Float32Array(bufferLength);
+	analyser.getFloatFrequencyData(dataArray);
+
+	ctx.clearRect(0, 0, width, height);
+
+	ctx.strokeStyle = "rgb(255, 0, 0)";
+	ctx.lineWidth = 3.0;
+
+	function line(from_x, from_y, to_x, to_y) {
+		ctx.moveTo(from_x, from_y);
+		ctx.lineTo(to_x, to_y);
+	}
+
+	function map_range(value, low1, high1, low2, high2) {
+		// https://stackoverflow.com/questions/5649803/remap-or-map-function-in-javascript
+		return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
+	}
+
+	const center_x = width/2.0;
+	const center_y = height/2.0;
+	const radius_circle = width * 0.05;
+	const minimum_radius = radius_circle * 1.08;
+	const radius_lines_max = radius_circle * 3.5;
+
+	ctx.beginPath();
+	let frequency_padding = 200;
+	if(bufferLength > frequency_padding) {
+		// don't do the super low or the super high frequencies
+		let end = bufferLength - Math.floor(frequency_padding/2);
+		let begin = Math.floor(frequency_padding / 2);
+		let bufferLength_after_padding = end - begin;
+		for(let i = begin; i < end; i++) {
+			const theta = (i/bufferLength_after_padding) * 2.0 * 3.14159;
+
+			const unit_x = Math.cos(theta);
+			const unit_y = Math.sin(theta);
+
+			const from_x = center_x + unit_x * radius_circle;
+			const from_y = center_y + unit_y * radius_circle;
+
+			let this_frequency_volume_decibles = dataArray[i];
+			// decibles is like from -140 to -70 on my machine right now, so just scale it from 0 to 1 in terms of loudness like that
+			let loudness_of_this_frequency = 1.0 - (-this_frequency_volume_decibles)/140.0;
+
+			let cur_line_amount = loudness_of_this_frequency;
+			let effective_radius = cur_line_amount * (radius_lines_max - radius_circle) + radius_circle;
+			if(effective_radius < minimum_radius) effective_radius = minimum_radius;
+			const to_x = center_x + unit_x * effective_radius;
+			const to_y = center_y + unit_y * effective_radius;
+
+			line(from_x, from_y, to_x, to_y);
+		}
+	}
+	ctx.stroke();
+
+
+	window.requestAnimationFrame(draw);
+}
 
 function start() {
 	button_div.style.display = "none";
 	canvas.style.display = "block";
 	const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-	const analyser = audioCtx.createAnalyser();
-	analyser.fftSize = 2048;
-	const bufferLength = analyser.frequencyBinCount;
-	const dataArray = new Uint8Array(bufferLength);
-	analyser.getByteTimeDomainData(dataArray);
+	analyser = audioCtx.createAnalyser();
+	analyser.fftSize = 1024;
 
 	navigator.mediaDevices.getUserMedia({ audio: true })
 		.then(stream => {
-			// Store the media stream
-			mediaStream = stream;
-
 			// Create a media stream source node
 			const source = audioCtx.createMediaStreamSource(stream);
 			source.connect(analyser);
-
+			window.requestAnimationFrame(draw);
 		})
 		.catch(error => {
 			console.error('Error accessing microphone:', error);
@@ -72,25 +133,6 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas, false);
 resizeCanvas();
-
-function draw() {
-
-	var width = canvas.width;
-	var height = canvas.height;
-	var ctx = canvas.getContext("2d");
-
-	ctx.clearRect(0, 0, width, height);
-
-	ctx.beginPath();
-	ctx.arc(width/2.0, height/2.0, width*0.1, 0, 2 * Math.PI);
-	ctx.stroke();
-
-
-	window.requestAnimationFrame(draw);
-}
-window.requestAnimationFrame(draw);
-
-
 	</script>
 </body>
 </html>
