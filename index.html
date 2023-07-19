@@ -1,18 +1,16 @@
 <html>
 <head>
 
-<style>
+<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
+
+<script type="module" src="main.js"></script>
+
+<!-- <style>
 /* this stuff is just to make the canvas fullscreen */
-
-
 * { margin:0; padding:0; } /* to remove the top and left whitespace */
-
 html, body { width:100%; height:100%; } /* just to be sure these are full screen*/
-
 canvas { display:block; } /* To remove the scrollbars */
-
 button { width: 10em; height: 10%; font-size: 200%; }
-
 #button-div {
 	display: flex;
 	align-items: center;
@@ -22,21 +20,21 @@ button { width: 10em; height: 10%; font-size: 200%; }
 	height: 100%;
 	position: absolute;
 }
-
-</style>
+</style> -->
 
 </head>
 
 <body>
-	<div id="button-div">
+	<img src="ui_mockup.png" style="position:absolute; z-index: -1;">
+
+	<!-- <div id="button-div">
 		<button onclick="start()">Start</button>
 	</div>
 	<canvas id="canvas" style="display: none;">
 	</canvas>
-
-
+ -->
 	<script>
-
+/*
 var canvas = document.getElementById("canvas");
 var button_div = document.getElementById("button-div");
 
@@ -133,6 +131,7 @@ function resizeCanvas() {
 
 window.addEventListener('resize', resizeCanvas, false);
 resizeCanvas();
+ */
 	</script>
 </body>
 </html>
