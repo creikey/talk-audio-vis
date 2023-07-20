@@ -1,137 +1,168 @@
 <html>
 <head>
 
-<script async src="https://unpkg.com/es-module-shims@1.6.3/dist/es-module-shims.js"></script>
-
 <script type="module" src="main.js"></script>
 
-<!-- <style>
-/* this stuff is just to make the canvas fullscreen */
-* { margin:0; padding:0; } /* to remove the top and left whitespace */
-html, body { width:100%; height:100%; } /* just to be sure these are full screen*/
-canvas { display:block; } /* To remove the scrollbars */
-button { width: 10em; height: 10%; font-size: 200%; }
-#button-div {
-	display: flex;
-	align-items: center;
-	justify-content: center;
-	text-align: center;
-	width: 100%;
-	height: 100%;
-	position: absolute;
+<script id="3d-vertex-shader" type="x-shader/x-vertex">
+attribute vec4 a_position;
+attribute vec2 a_texcoord;
+
+uniform float time;
+
+varying vec2 v_texcoord;
+
+void main() {
+  // Multiply the position by the matrix.
+  gl_Position = a_position;
+
+  // Pass the texcoord to the fragment shader.
+  v_texcoord = a_texcoord;
 }
-</style> -->
+</script>
+<!-- fragment shader -->
+<script id="3d-fragment-shader" type="x-shader/x-fragment">
+precision mediump float;
+
+// Passed in from the vertex shader.
+varying vec2 v_texcoord;
+
+uniform float time;
+
+#define ONE vec2(1.0, 0.0)
+#define EPS vec2(1e-3, 0.0)
+const float pi = 3.1415926;
+
+float N(vec2 p)
+{
+   p = mod(p, 4.0);
+   return fract(sin(p.x * 41784.0) + sin(p.y * 32424.0));
+}
+
+float smN2(vec2 p)
+{
+	vec2 fp = floor(p);
+	vec2 pf = smoothstep(0.0, 1.0, fract(p));
+	return mix( mix(N(fp), N(fp + ONE), pf.x), 
+			   mix(N(fp + ONE.yx), N(fp + ONE.xx), pf.x), pf.y);
+}
+
+
+float fbm2(vec2 p)
+{
+	float f = 0.0, x;
+	for(int i = 1; i <= 9; ++i)
+	{
+		x = exp2(float(i));
+		f += smN2(p * x) / x;
+	}
+	return f;
+}
+
+// Scalar field for the surface undulations.
+float field(vec2 p)
+{
+	p *= 0.5;
+	return mix(smN2(p * 4.0), smN2(p * 5.0), 0.5 + 0.5 * cos(time * 0.1));
+}
+
+// Vector field extracted from the scalar field.
+vec2 flow(vec2 p)
+{
+	float f0 = field(p);
+	float f1 = field(p + EPS.xy);
+	float f2 = field(p + EPS.yx);
+	return normalize(vec2(f1 - f0, f2 - f0)).yx * vec2(-1, 1) * 0.01;
+}
+
+// The texture.
+uniform sampler2D u_texture;
+
+float hash11(float p)
+{
+    p = fract(p * 0.1031);
+    p *= p + 33.33;
+    p *= p + p;
+    return fract(p);
+}
+
+float smoothhash( float x )
+{
+    //float previous = hash11(float(int(x) - 1));
+    //float current = hash11(float(int(x)));
+    //return mix(previous, current, fract(x));
+    return mix(hash11(floor(x)), hash11(ceil(x)), fract(x));
+}
+
+vec4 alphaBlend(vec4 top, vec4 bottom) {
+	float output_alpha = clamp(top.a + bottom.a, 0.0, 1.0);
+	
+	return mix(bottom, top, top.a);
+	
+	//return vec4(from.rgb, output_alpha);
+}
+
+void main() {
+	//gl_FragColor = texture2D(u_texture, v_texcoord);
+	vec3 blue = vec3(12.0, 113.0, 229.0)/255.0;
+	vec3 dark_blue = vec3(14.0, 21.0, 54.0)/255.0;
+
+
+	vec2 uv = v_texcoord;
+	vec2 fromcenter = uv - vec2(0.5, 0.5);
+
+	float circ = length(fromcenter);
+	vec4 col_out = vec4(0.0);
+	float in_circle = clamp(1.0 - smoothstep(0.3, 0.31, circ), 0.0, 1.0);
+	float mask_center = smoothstep(0.05	, 0.20, circ);
+	float line = in_circle;
+	line -= 1.0 - smoothstep(0.28, 0.30, circ);
+
+	float wavy_circ = length(fromcenter);
+	wavy_circ += fbm2(fromcenter*1.5 + vec2(0.5, 0.4)*time*0.2)*0.03;
+	float wavy_line_with_inside = clamp(1.0 - smoothstep(0.28, 0.31, wavy_circ), 0.0, 1.0);
+	float wavy_line = wavy_line_with_inside - (1.0 - smoothstep(0.25, 0.27, wavy_circ));
+
+	//col_out += mix(vec4(blue, 0), vec4(blue, 1), line);
+	//col_out += vec4(blue*line, line);
+	//col_out = vec4(blue, 1.0);
+
+	vec2 funky_uv = fromcenter;
+	float funky_time = time*0.4;
+	for(int i = 0; i < 32; i++) {
+		funky_uv = funky_uv + flow(funky_uv*3.5 + vec2(0.2, 0.7)*funky_time)*0.05;
+	}
+	float funky_theta = atan(funky_uv.y, funky_uv.x);
+	float lines = pow(smoothhash(funky_theta*15.0), 2.0);
+
+	col_out = vec4(blue*lines, in_circle*lines*mask_center*wavy_line_with_inside);
+	col_out = alphaBlend(vec4(dark_blue, wavy_line), col_out);
+
+	gl_FragColor = col_out;
+
+	// good tests for when the blending is funkalitious
+	//gl_FragColor = vec4(vec3(0),fract(time));
+	//gl_FragColor = vec4(vec3(1),fract(time));
+	//gl_FragColor = vec4(fract(time),0,0,1);
+}
+</script>
+
+<!--
+for most samples webgl-utils only provides shader compiling/linking and
+canvas resizing because why clutter the examples with code that's the same in every sample.
+See http://webglfundamentals.org/webgl/lessons/webgl-boilerplate.html
+and http://webglfundamentals.org/webgl/lessons/webgl-resizing-the-canvas.html
+for webgl-utils, m3, m4, and webgl-lessons-ui.
+-->
+<script src="https://webglfundamentals.org/webgl/resources/webgl-utils.js"></script>
+<script src="https://webglfundamentals.org/webgl/resources/m4.js"></script>
 
 </head>
 
 <body>
 	<img src="ui_mockup.png" style="position:absolute; z-index: -1;">
+	<canvas id="canvas" style="width: 300px; height: 300px; position: absolute; top:70px; left:640px;"></canvas>
 
-	<!-- <div id="button-div">
-		<button onclick="start()">Start</button>
-	</div>
-	<canvas id="canvas" style="display: none;">
-	</canvas>
- -->
 	<script>
-/*
-var canvas = document.getElementById("canvas");
-var button_div = document.getElementById("button-div");
-
-var analyser;
-
-function draw() {
-	var width = canvas.width;
-	var height = canvas.height;
-	var ctx = canvas.getContext("2d");
-
-	const bufferLength = analyser.frequencyBinCount;
-	const dataArray = new Float32Array(bufferLength);
-	analyser.getFloatFrequencyData(dataArray);
-
-	ctx.clearRect(0, 0, width, height);
-
-	ctx.strokeStyle = "rgb(255, 0, 0)";
-	ctx.lineWidth = 3.0;
-
-	function line(from_x, from_y, to_x, to_y) {
-		ctx.moveTo(from_x, from_y);
-		ctx.lineTo(to_x, to_y);
-	}
-
-	function map_range(value, low1, high1, low2, high2) {
-		// https://stackoverflow.com/questions/5649803/remap-or-map-function-in-javascript
-		return low2 + (high2 - low2) * (value - low1) / (high1 - low1);
-	}
-
-	const center_x = width/2.0;
-	const center_y = height/2.0;
-	const radius_circle = width * 0.05;
-	const minimum_radius = radius_circle * 1.08;
-	const radius_lines_max = radius_circle * 3.5;
-
-	ctx.beginPath();
-	let frequency_padding = 200;
-	if(bufferLength > frequency_padding) {
-		// don't do the super low or the super high frequencies
-		let end = bufferLength - Math.floor(frequency_padding/2);
-		let begin = Math.floor(frequency_padding / 2);
-		let bufferLength_after_padding = end - begin;
-		for(let i = begin; i < end; i++) {
-			const theta = (i/bufferLength_after_padding) * 2.0 * 3.14159;
-
-			const unit_x = Math.cos(theta);
-			const unit_y = Math.sin(theta);
-
-			const from_x = center_x + unit_x * radius_circle;
-			const from_y = center_y + unit_y * radius_circle;
-
-			let this_frequency_volume_decibles = dataArray[i];
-			// decibles is like from -140 to -70 on my machine right now, so just scale it from 0 to 1 in terms of loudness like that
-			let loudness_of_this_frequency = 1.0 - (-this_frequency_volume_decibles)/140.0;
-
-			let cur_line_amount = loudness_of_this_frequency;
-			let effective_radius = cur_line_amount * (radius_lines_max - radius_circle) + radius_circle;
-			if(effective_radius < minimum_radius) effective_radius = minimum_radius;
-			const to_x = center_x + unit_x * effective_radius;
-			const to_y = center_y + unit_y * effective_radius;
-
-			line(from_x, from_y, to_x, to_y);
-		}
-	}
-	ctx.stroke();
-
-
-	window.requestAnimationFrame(draw);
-}
-
-function start() {
-	button_div.style.display = "none";
-	canvas.style.display = "block";
-	const audioCtx = new (window.AudioContext || window.webkitAudioContext)();
-	analyser = audioCtx.createAnalyser();
-	analyser.fftSize = 1024;
-
-	navigator.mediaDevices.getUserMedia({ audio: true })
-		.then(stream => {
-			// Create a media stream source node
-			const source = audioCtx.createMediaStreamSource(stream);
-			source.connect(analyser);
-			window.requestAnimationFrame(draw);
-		})
-		.catch(error => {
-			console.error('Error accessing microphone:', error);
-		});
-}
-
-function resizeCanvas() {
-	canvas.width = window.innerWidth;
-	canvas.height = window.innerHeight;
-}
-
-window.addEventListener('resize', resizeCanvas, false);
-resizeCanvas();
- */
 	</script>
 </body>
 </html>
